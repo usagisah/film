@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "removeComments": true,
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "declaration": true,
+    "allowSyntheticDefaultImports": true,
+    "strictNullChecks": true,
+    "incremental": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "outDir": "./film"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
+}

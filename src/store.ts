@@ -13,23 +13,21 @@ export interface FilmStoreConfig<T> {
   setter?: (newState: T, oldState: T, info: FilmStoreActionInfo) => T
   expose?: (info: FilmStoreActionInfo) => boolean
   overwrite?: (newStore: FilmStore, oldStore: FilmStore, userAppId: string, config: FilmStoreConfig<any>) => FilmStore
-  [x: string]: any
 }
 
 export type FilmDefineStore = typeof defineStore
-function defineStore<T>(config: FilmStoreConfig<T>) {
-  const { appId } = globalConfig
-  createFilmStore(appId, config)
+function defineStore<T>(useAppId: string, config: FilmStoreConfig<T>) {
+  createFilmStore(useAppId, config)
 }
 
-export type FilmUseStore = typeof getStore
+export type FilmGetStore = typeof getStore
 function getStore<T = any>(id: string, params?: any): T
 function getStore<T = any>(appId: string, storeId: string, params?: any): T
-function getStore(p1: string, p2: any, params: any = null) {
+function getStore(useAppId: any, p1: any, p2: any = null, params: any = null) {
   const { appId } = globalConfig
   if (appId.length === 0) throw globalConfig.unInitError
   if (typeof p1 !== "string") throw "useStore.params[0] 必须是一个仓库id"
-  let _appId = appId
+  let _appId = useAppId ?? appId
   let _storeId = p1
   if (typeof p2 === "string") {
     _appId = p1
@@ -44,38 +42,63 @@ function getStore(p1: string, p2: any, params: any = null) {
   return [state, setter]
 }
 
+export type FilmWatchStore = typeof watchStore
+function watchStore<T = any>(storeId: string, handle: (newStates: T, oldStates: T) => any): () => any
+function watchStore<T = any>(appId: string, storeId: string, handle: (newStates: T, oldStates: T) => any): () => any
+function watchStore(p0?: any, p1?: any, p2?: any, p3?: any): any {
+  let appId = ""
+  let storeId = ""
+  let handle: any
+  if (typeof p2 === "string") {
+    appId = p1
+    storeId = p2
+    handle = p3
+  } else {
+    appId = p0
+    storeId = p1
+    handle = p2
+  }
+  const res = watchFilmStore(appId, storeId, handle)
+  return res ?? function unWatch() {}
+}
+
 export type FilmUseStoreManager = typeof useStoreManager
 export function useStoreManager() {
   const { appId } = globalConfig
   if (appId.length === 0) throw globalConfig.unInitError
-  return { define: defineStore, get: getStore }
+  const useAppId = arguments[0] ?? appId
+  return {
+    define: defineStore.bind(null, useAppId),
+    get: getStore.bind(null, useAppId) as FilmGetStore,
+    watch: watchStore.bind(null, useAppId) as FilmWatchStore
+  }
 }
 
 type FilmStore = {
   state: any
   appId: string
   storeId: string
-  getters: ((state: any, info: FilmStoreActionInfo) => any)[]
-  setters: ((newState: any, oldState: any, info: FilmStoreActionInfo) => any)[]
-  exposes: ((info: FilmStoreActionInfo) => boolean)[]
+  getter?: (state: any, info: FilmStoreActionInfo) => any
+  setter?: (newState: any, oldState: any, info: FilmStoreActionInfo) => any
+  subscribers: ((newStates: any, oldStates: any) => any)[]
   overwrite: (newStore: FilmStore, oldStore: FilmStore, userAppId: string, config: FilmStoreConfig<any>) => FilmStore
 }
 const filmAppStoreMap = new Map<string, Map<string, FilmStore>>()
 const filmStoreEmptyState = Symbol("filmStoreEmptyState")
 
-let createFilmStore = (userAppId: string, config: FilmStoreConfig<any>) => {
+function createFilmStore(userAppId: string, config: FilmStoreConfig<any>) {
   const { id, state, getter, setter, expose, overwrite } = config
 
   let appStoreMap = filmAppStoreMap.get(userAppId)
   if (!appStoreMap) filmAppStoreMap.set(userAppId, (appStoreMap = new Map()))
 
-  let newStore = {
+  let newStore: FilmStore = {
     appId: userAppId,
     storeId: id,
     state,
-    getters: (Array.isArray(getter) ? getter : getter) as any,
-    setters: (Array.isArray(setter) ? setter : setter) as any,
-    exposes: (Array.isArray(expose) ? expose : expose) as any,
+    getter,
+    setter,
+    subscribers: [],
     overwrite: typeof overwrite === "function" ? overwrite : (v: any) => v
   }
   const oldStore = appStoreMap.get(id)
@@ -85,30 +108,47 @@ let createFilmStore = (userAppId: string, config: FilmStoreConfig<any>) => {
   appStoreMap.set(id, newStore)
 }
 
-let getFilmStore = (appId: string, storeId: string, params: any) => {
+function getFilmStore(appId: string, storeId: string, params: any) {
   const appStoreMap = filmAppStoreMap.get(appId)
   if (!appStoreMap) return filmStoreEmptyState
   const store = appStoreMap.get(storeId)
   if (!store) return filmStoreEmptyState
 
-  const { exposes, getters, state } = store
+  const { getter, state } = store
   const info: FilmStoreActionInfo = { appId, storeId, params }
-  for (const fn of exposes) if (!fn(info)) return filmStoreEmptyState
-
-  let result = state
-  for (const fn of getters) result = fn(result, info)
-  return result
+  return getter ? getter(state, info) : state
 }
 
-let setFilmStore = (appId: string, storeId: string, newState: any, params: any) => {
+function setFilmStore(appId: string, storeId: string, newState: any, params: any) {
   const appStoreMap = filmAppStoreMap.get(appId)
   if (!appStoreMap) return null
   const store = appStoreMap.get(storeId)
   if (!store) return null
 
-  const { state, setters } = store
+  const { state, setter, subscribers } = store
   const info: FilmStoreActionInfo = { appId, storeId, params }
-  let result = state
-  for (const fn of setters) result = fn(newState, state, info)
+  const result = setter ? setter(newState, state, info) : state
+  if (result === undefined) return
+
+  for (const fn of subscribers) fn(result, state)
   store.state = result
+}
+
+function watchFilmStore(appId: string, storeId: string, handle: any) {
+  const appStoreMap = filmAppStoreMap.get(appId)
+  if (!appStoreMap) return false
+  const store = appStoreMap.get(storeId)
+  if (!store) return false
+
+  const { subscribers, state, getter } = store
+  subscribers.push(handle)
+
+  const info: FilmStoreActionInfo = { appId, storeId, params: null }
+  const _state = getter ? getter(state, info) : state
+  handle(_state, undefined)
+
+  return function unWatch() {
+    const index = subscribers.indexOf(handle)
+    if (index > -1) subscribers.splice(index, 1)
+  }
 }

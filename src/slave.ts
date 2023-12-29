@@ -10,10 +10,13 @@ export async function defineFilm(config: FilmInitConfig) {
   const { gMapField } = globalConfig
   const map: any = (globalThis as any)[gMapField]
   if (isObject(map)) {
-    map[appId] = function playFilm(api: FilmStaticApi, param: any = {}) {
+    map[appId] = function playFilm(api: FilmStaticApi) {
       if (globalConfig.appId.length > 0) return
       globalConfig.appId = appId!
-      setFilmStaticApi(api)
+      setFilmStaticApi({
+        useFilmDependencyManager: (api.useFilmDependencyManager as any).bind(null, appId),
+        useFilmStoreManager: (api.useFilmStoreManager as any).bind(null, appId)
+      })
       return factory && factory({ rootApp: false })
     }
   } else {

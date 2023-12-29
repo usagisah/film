@@ -15,7 +15,7 @@ export type {
   FilmUseDependencyManager
 } from "./dep.js"
 export type * from "./dep.type.js"
-export type { FilmDefineStore, FilmStoreActionInfo, FilmStoreConfig, FilmUseStore, FilmUseStoreManager } from "./store.js"
+export type { FilmDefineStore, FilmGetStore, FilmStoreActionInfo, FilmStoreConfig, FilmUseStoreManager, FilmWatchStore } from "./store.js"
 
 const throwFn: any = () => {
   throw globalConfig.unInitError

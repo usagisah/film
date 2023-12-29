@@ -26,9 +26,8 @@ export interface FilmDependencyInfoConfig {
 }
 
 export type FilmDefineDependencies = typeof defineDependencies
-function defineDependencies<T extends FilmDependencyConfig = FilmDependencyConfig>(appId: string, config: T) {
-  const { appId } = globalConfig
-  return setFilmDep(appId, config)
+function defineDependencies<T extends FilmDependencyConfig = FilmDependencyConfig>(useAppId: string, config: T) {
+  return setFilmDep(useAppId, config)
 }
 
 export type FilmGetDependency = typeof getDependency
@@ -71,13 +70,14 @@ function getDependencyInfo(p1?: any, p2?: any) {
 
   if (isObject(p2)) config = p2
 
-  if (keys.length === 0) return []
   const { appId, state, value, version } = config
   const depKeys = [...filmDependencyMap.keys()]
   const result: any[] = []
   for (const k of depKeys) {
-    const [name, _version] = k.split("-")
-    if (keys.includes(name)) {
+    const ks = k.split("-")
+    const name = ks.slice(0, -1).join("-")
+    const _version = ks.at(-1)
+    if (keys.length === 0 || keys.includes(name)) {
       const info = filmDependencyMap.get(k)!
       result.push({
         name,
@@ -95,7 +95,8 @@ export type FilmUseDependencyManager = typeof useDependencyManager
 export function useDependencyManager() {
   const { appId } = globalConfig
   if (appId.length === 0) throw globalConfig.unInitError
-  return { get: getDependency, resolve: resolveDependency, getDependencyInfo, define: defineDependencies }
+  const useAppId = arguments[0] ?? appId
+  return { get: getDependency, resolve: resolveDependency, getDependencyInfo, define: defineDependencies.bind(null, useAppId) }
 }
 
 type FilmDependency = {
